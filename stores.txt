@@ -1,0 +1,3 @@
+store1,123 Main St,120
+store2,456 Oak Ave,80
+store3,789 Pine Rd,150

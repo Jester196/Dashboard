@@ -1,0 +1,166 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kibernetiki Stores</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    canvas { max-width: 200px; max-height: 200px; }
+  </style>
+</head>
+<body class="flex flex-col min-h-screen bg-gray-100">
+  <div class="flex flex-1">
+    <!-- Sidebar -->
+    <div class="w-1/4 bg-white p-4 border-r border-gray-300">
+      <h1 class="text-2xl font-bold mb-4">Kibernetiki</h1>
+      <ul id="store-list" class="space-y-2"></ul>
+    </div>
+
+    <!-- Main Content -->
+    <div class="w-3/4 p-4">
+      <div id="store-info" class="flex flex-col items-center">
+        <div class="flex space-x-4 mb-4">
+          <canvas id="pieChart"></canvas>
+          <canvas id="barChart"></canvas>
+        </div>
+        <p id="profit" class="text-lg font-semibold">Profit: $0</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let pieChart, barChart;
+
+    // Initialize charts
+    function initCharts(profit) {
+      const pieCtx = document.getElementById('pieChart').getContext('2d');
+      const barCtx = document.getElementById('barChart').getContext('2d');
+
+      if (pieChart) pieChart.destroy();
+      if (barChart) barChart.destroy();
+
+      pieChart = new Chart(pieCtx, {
+        type: 'pie',
+        data: {
+          labels: ['Profit', 'Remaining'],
+          datasets: [{
+            data: [profit, 1000 - profit],
+            backgroundColor: ['#36A2EB', '#FF6384']
+          }]
+        },
+        options: { responsive: true }
+      });
+
+      barChart = new Chart(barCtx, {
+        type: 'bar',
+        data: {
+          labels: ['Day 1', 'Day 2', 'Day 3'],
+          datasets: [{
+            label: 'Profit ($)',
+            data: [profit * 0.8, profit * 0.9, profit],
+            backgroundColor: '#36A2EB'
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    // Fetch and display store data
+    fetch('stores.txt')
+      .then(response => response.text())
+      .then(data => {
+        const storeList = document.getElementById('store-list');
+        const lines = data.trim().split('\n');
+        const stores = [];
+
+        // Parse each line and validate
+        lines.forEach((line, index) => {
+          const [id, address, profit] = line.split(',').map(item => item.trim());
+          // Validate the line format
+          if (
+            id && address && profit &&
+            !isNaN(profit) &&
+            !line.includes('function') && // Skip lines with code snippets
+            !line.includes('event')      // Skip lines with event-related code
+          ) {
+            stores.push({ id, address, profit: parseFloat(profit) });
+          } else {
+            console.warn(`Skipping invalid line ${index + 1} in stores.txt: ${line}`);
+          }
+        });
+
+        // Clear the list to prevent duplicates
+        storeList.innerHTML = '';
+
+        // Populate store list
+        stores.forEach(store => {
+          const li = document.createElement('li');
+          li.className = 'p-2 bg-gray-200 rounded cursor-pointer hover:bg-gray-300';
+          li.textContent = store.address;
+          li.dataset.storeId = store.id;
+          li.dataset.profit = store.profit;
+          li.addEventListener('click', () => {
+            document.getElementById('profit').textContent = `Profit: $${store.profit}`;
+            initCharts(store.profit);
+          });
+          storeList.appendChild(li);
+        });
+
+        // Initialize with the first store
+        if (stores.length > 0) {
+          document.getElementById('profit').textContent = `Profit: $${stores[0].profit}`;
+          initCharts(stores[0].profit);
+        } else {
+          console.error('No valid stores found in stores.txt');
+        }
+      })
+      .catch(error => console.error('Error loading store data:', error));
+  </script>
+</body>
+</html>
